@@ -1,20 +1,18 @@
 #!/usr/bin/env python
 
-"""
-A modified version of the executable script, adapted for Linux
-Will probably work on windows but I can't be bothered to test.
-
-The program now assumes that you are running the python script from the same directory as the 'code.lsp' file.  If you'd like to run a different .lsp file you can use the following format
-
-python lisp.py [lisp file]
-
-You can also run this as a stand alone by using
-
-chmod u+x lisp.py
-"""
+import string
 import os
+
+# importing the sys module
 import sys
-from xmlrpc.client import Boolean
+
+# the setrecursionlimit function is
+# used to modify the default recursion
+# limit set by python. Using this,
+# we can increase the recursion limit
+# to satisfy our needs
+
+sys.setrecursionlimit(10 ** 5)
 
 VERBOSE = False
 PATH = os.getcwd() + "/"
@@ -27,22 +25,43 @@ if len(sys.argv) > 1:
 else:
     FILE = PATH + "code.lsp"
 
+LispAtoms = ["True", "False", "nil"]
+LispFunctions = [
+    "+",
+    "-",
+    "*",
+    "/",
+    "if",
+    "not",
+    "and",
+    "or",
+    "eq",
+    "<",
+    "atom",
+    "cons",
+    "first",
+    "rest",
+    "quote",
+    "eval",
+]
+
 
 def runProgram(fileName="code.lsp", trace=False):
     # reads the code in file name, parses it, executes each statement
+    global Trace
+    Trace = trace
     program = readInFile(fileName)
     # parse the string into a list of lists
     codeList = parseProgram(program)
-    evalProgram(codeList, trace=trace)
+    # print(codeList)
+    evalProgram(codeList)
 
 
 def readInFile(fileName):
     # reads in a lisp program, returns as one big string
     print("Reading %s" % (FILE))
-    with open(FILE, "r", encoding="utf8") as file:  # ignore comment lines
-        lines = [
-            l for l in file.readlines() if not l[0] == "#" and not l.startswith(";;")
-        ]
+    with open(FILE, "r") as file:  # ignore comment lines
+        lines = [l for l in file.readlines() if not l[0] == "#"]
     whole = ""
     for line in lines:
         whole = whole + line
@@ -56,13 +75,11 @@ def parseProgram(programString):
     # takes a string that represents a program, multiple statements
     # returns a list of list of tokens, each a statement
     tokens = spaceOut(programString).split()
+    # print(tokens)
     codeList = []
-    if not balanced(tokens):
-        print("Exiting program early, unmatched parenthesis")
-        exit()
-
     while not tokens == []:
         code = createCode(tokens)
+        # print(code)
         codeList.append(code)
     return codeList
 
@@ -85,26 +102,36 @@ def createCode(tokenList):
     return args
 
 
-def balanced(tokenList) -> Boolean:
-    count = 0
-    for t in tokenList:
-        if count < 0:
-            return False
-        if t == ")":
-            count -= 1
-        elif t == "(":
-            count += 1
-    return count == 0
-
-
 #######################################################################################################################
 ###### semantics
 #######################################################################################################################
-def evalProgram(codeList, trace=True):
+def evalProgram(codeList):
     # top call, evaluates a list of parsed statements
-    global Trace
-    Trace = trace
-    evalLispBlock(codeList, {}, [])
+    evalLispBlock(codeList, {})
+
+
+def evalLispBlock(block, oneBinding):
+    # walks down the block (a list of expressions) evaluating each statement
+    # and accumulating bindings of function names to definitions
+    # into oneBinding
+    if len(block) == 0:  # empty block, return None
+        return
+    code = block[0]
+    if (
+        isinstance(code, list) and code[0] == "defun"
+    ):  # put mapping from name to arguments, body
+        oneBinding[code[1] + "_defun"] = (code[2], code[3])
+        if Trace:
+            print(
+                "Create function->definition binding: %s = [%s, %s]"
+                % (code[1], str(code[2]), str(code[3]))
+            )
+        # keep working through block
+        evalLispBlock(block[1:], oneBinding)
+    else:  # found an expression, evaluate it with current bindings
+        evalLisp(block[0], [oneBinding])
+        # print("\n")
+        evalLispBlock(block[1:], oneBinding)
 
 
 def evalLisp(code, bindings=[], depth=0):
@@ -113,14 +140,16 @@ def evalLisp(code, bindings=[], depth=0):
     # to its value. These are generated from def statements, and when
     # a user-defined function is called
     if Trace or depth == 0:
-        print("%sEval %s" % ("|  " * depth, str(code)))
+        print("%sEval %s" % ("|  " * depth, toString(code)))
     answer = evalLispHelp(code, bindings, depth)
     if Trace or depth == 0:
-        print("%sAns  %s " % ("|  " * depth, str(answer)))
+        print("%sAns  %s " % ("|  " * depth, toString(answer)))
     return answer
 
 
 def evalLispHelp(code, bindings, depth):
+    # print(code)
+    # main code that implements semantics of lisp
     # do all atoms
     if isinstance(code, int):
         return code
@@ -132,9 +161,8 @@ def evalLispHelp(code, bindings, depth):
         return []
     if isinstance(code, str):  # variable
         return findValue(code, bindings, depth)
-
     # do all composite code
-    fun = code[0]
+    fun = code[0]  # get the function name
     # numerical functions
     if fun == "+":
         return evalLisp(code[1], bindings, depth + 1) + evalLisp(
@@ -148,8 +176,8 @@ def evalLispHelp(code, bindings, depth):
         return evalLisp(code[1], bindings, depth + 1) * evalLisp(
             code[2], bindings, depth + 1
         )
-    if fun == "/":
-        return evalLisp(code[1], bindings, depth + 1) / evalLisp(
+    if fun == "/":  # integer division
+        return evalLisp(code[1], bindings, depth + 1) // evalLisp(
             code[2], bindings, depth + 1
         )
     # control functions
@@ -201,8 +229,37 @@ def evalLispHelp(code, bindings, depth):
         return code[1]
     if fun == "eval":  # evaluate to get the code, then evaluate the code
         return evalLisp(evalLisp(code[1], bindings, depth + 1))
-        # must be a user function call
-    return evalLispFun(code[0], code[1:], bindings, depth + 1)
+    # must be a user function call
+    return evalUserLispFun(code[0], code[1:], bindings, depth + 1)
+
+
+def evalUserLispFun(funName, args, bindings, depth):
+    # Execute a user defined function
+    # print(funName)
+    # print(args)
+    # print(bindings)
+    if Trace:
+        print("|  " * depth + "Calling function %s" % (funName,))
+    # lookup the function definition in bindings
+    # parameter list and then the body of the function
+    (params, body) = findValue(funName + "_defun", bindings, depth)
+    # print(params)
+    # print(body)
+    # create a new binding to hold local variables and their values
+    # oneBinding is a single dictionary
+    oneBinding = {}
+    # add the mapping from parameter names to values
+    for (oneParam, oneExpression) in zip(params, args):
+        # evaluate the arguments and create the bindings
+        value = evalLisp(oneExpression, bindings, depth + 1)
+        oneBinding[oneParam] = value
+        if Trace:
+            print(
+                "|  " * depth
+                + "Create parameter->value binding: %s = %s" % (oneParam, value)
+            )
+    # work through each statement in block
+    return evalLisp(body, [oneBinding] + bindings, depth=depth + 1)
 
 
 def simpleEqual(a, b):
@@ -216,91 +273,19 @@ def simpleEqual(a, b):
     return False
 
 
-def evalLispFun(funName, args, bindings, depth):
-    # Execute a user defined function
-    if Trace:
-        print("|  " * depth + "Calling function %s" % (funName,))
-    # lookup the function definition in bindings
-    (params, block) = findValue(funName, bindings, depth)
-    # create a new binding to hold local variables from parmeters, sets and defs
-    oneBinding = {}
-    # add the mapping from parameter names to values
-    for (oneParam, oneExpression) in zip(params, args):
-        value = evalLisp(oneExpression, bindings, depth + 1)
-        oneBinding[oneParam] = value
-        if Trace:
-            print(
-                "|  " * depth
-                + "Create parameter-value binding: %s = %s" % (oneParam, value)
-            )
-    # work through each statement in block
-    return evalLispBlock(block, oneBinding, bindings, depth=depth + 1)
-
-
-def evalLispBlock(block, oneBinding, bindings, depth=0):
-    # walks down the block (a list of expressions) evaluating each statement and accumulating bindings
-    # into this oneBinding for this block
-    if len(block) == 0:  # empty block, return None
-        return
-    else:
-        code = block[0]
-        if not isinstance(code, list):
-            ans = evalLisp(block[0], [oneBinding] + bindings, depth)
-            # if last expression then return the answer
-            if block[1:] == []:
-                return ans
-            else:  # keep going through the block
-                return evalLispBlock(block[1:], oneBinding, bindings, depth=depth)
-
-        if code[0] == "set":
-            # map the name of the variable to the eval of value
-            if Trace:
-                print(
-                    "|  " * depth + "Evaluating set %s = %s" % (code[1], str(code[2]))
-                )
-            value = evalLisp(code[2], [oneBinding] + bindings, depth + 1)
-            oneBinding[code[1]] = value
-            if Trace:
-                print(
-                    "|  " * depth
-                    + "Create set variable binding: %s = %s" % (code[1], value)
-                )
-            # keep going through the block
-            return evalLispBlock(block[1:], oneBinding, bindings, depth=depth)
-
-        elif code[0] == "defun":  # put mapping from name to arguments, block
-            oneBinding[code[1]] = (code[2], code[3:])
-            if Trace:
-                print(
-                    "|  " * depth
-                    + "Create function binding: %s = [%s, %s]"
-                    % (code[1], str(code[2]), str(code[3:]))
-                )
-            # keep working through block
-            return evalLispBlock(block[1:], oneBinding, bindings, depth=depth)
-
-        else:  # found an expression, evaluate it with current bindings
-            ans = evalLisp(block[0], [oneBinding] + bindings, depth)
-            # if last expression then return the answer
-            if block[1:] == []:
-                return ans
-            else:  # keep going through the block
-                return evalLispBlock(block[1:], oneBinding, bindings, depth=depth)
-
-
 def findValue(name, bindings, depth):
+    # print(len(bindings))
     # name is a variable, bindings is a list of dictionaries ordered most
     # recent first, search up the bindings seeing if this variable is in
     # one of the dictionaries
-    if bindings == []:  # have not found the value
-        print("NO Value %s" % name)
-    if name in bindings[0]:  # found its value
-        if Trace:
-            print("|  " * depth + "Found Value of %s as %s" % (name, bindings[0][name]))
-        return bindings[0][name]
-    if Trace:
-        print("|  " * depth + "Looking for %s" % (name,))
-    return findValue(name, bindings[1:], depth)
+    for oneBinding in bindings:
+        if name in oneBinding:  # found its value
+            if Trace:
+                print(
+                    "|  " * depth + "Found Value of %s as %s" % (name, oneBinding[name])
+                )
+            return oneBinding[name]
+    print("did not find value?" + str(name))
 
 
 def toString(code):
@@ -315,4 +300,7 @@ def toString(code):
 
 ########################################################################################################################
 fileName = "code.lsp"
+# print(readInProgram(fileName))
+# runProgram(fileName, True)
 runProgram(fileName, VERBOSE)
+# print(parseProgram("(+ 1 2) (+ 4 5)"))

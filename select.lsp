@@ -35,8 +35,5 @@
 (defun select (list start end)
     (flatten (slice (get list start) (- end (+ start 1)))))
 
-(defun mergesort (list)
-    mergesortH((select list 0 (/ (length list)2) (select list (/ (length list) 2) (length list)))
-)
-
-(defun mergesortH(list0 list1))
+(select (quote (0 1 2 3 4 5 6 7 8 )) 0 (/ (length (quote (0 1 2 3 4 5 6 7 8 ))) 2 ))
+(select (quote (0 1 2 3 4 5 6 7 8 )) (/ (length (quote (0 1 2 3 4 5 6 7 8 ))) 2 )(length (quote (0 1 2 3 4 5 6 7 8 ))))
