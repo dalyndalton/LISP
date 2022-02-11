@@ -25,35 +25,35 @@
             (first list)
             (cons (first list) (cons (slice (rest list) (- idx 1)) nil)))))
 
-(defun get(list idx)
+(defun mget(list idx)
     (if (eq list nil)
         nil
         (if (eq 0 idx)
             list
-            (get (rest list) (- idx 1)))))
+            (mget (rest list) (- idx 1)))))
 
-(defun select (list start end)
-    (flatten (slice (get list start) (- end (+ start 1)))))
+(defun mselect (list start end)
+    (flatten (cons (slice (get list start) (- end (+ start 1))) nil)))
 
-(defun mergesort (list)
-    (merge-split (select list 0 (/ (length list) 2) (select list (/ (length list) 2) (length list))))
+(defun sort (list0 list1)
+    (if (eq list0 nil)
+        list1
+        (if (eq list1 nil)
+            list0
+            (if (< (first list0) (first list1))
+                (cons (first list0) (sort (rest list0) list1))
+                (cons (first list1) (sort (rest list1) list0))
+                ))))
 
-)
 
-(defun merge-split (list0 list1)
-    (if (or (atom list0) (atom list1))
-        (merge list0 list1)
-        (merge (mergesort list0) (mergesort list1))
+(defun mergeSort (list)
+    (if (eq (length list) 1)
+        list
+        (sort
+            (mergeSort (mselect list 0 (/ (length list) 2)))
+            (mergeSort (mselect list (/ (length list) 2) (length list))))))
 
-(defun merge (list0 list1)
-# both are atoms
-    (if (and (atom list0) (atom list1))
-        (if (< list0 list1)
-            (cons list0 (cons list1 nil))
-            (cons list1 (cons list0 nil)))
-# determine which one holds the atom
-        (if (or (atom list0 (atoms list1)))
-            (if (atom list0)
-                (if (< list0 (first list1)))))))
-    
 
+(mergeSort (quote (1 )))
+(mergeSort (quote (4 3 1 )))
+(mergeSort (quote (6 3 2 1 5 7 10 )))
